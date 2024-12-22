@@ -18,6 +18,7 @@ import cv2
 from utils import *
 import os
 from skimage.metrics import peak_signal_noise_ratio, structural_similarity
+
 """#### Two wrapper functions for image encoding & decoding
 ##### The next two functions for image decoding / encoding utilize the previously defined functions to work on a whole image with an efficient and organized code (kinda)
 """
@@ -167,7 +168,6 @@ def decode_image_lossless(encoded_data):
         reconstructed[:, i] = reconstructed[:, i - 1] + delta_decoded[:, i]
 
     return reconstructed
-
 
 
 """#### Motion vectors getting and compensating functions
@@ -555,91 +555,6 @@ def encode_vid_lossless(video_path, out_name, runtime_secs=2, display_frames=Tru
 # Test image encoding decoding
 
 
-
-def compare_compression_methods(image_path):
-    # Load image
-    original_img = Image.open(image_path).convert("L")  # Convert to grayscale
-    original_array = np.array(original_img)
-
-    # Calculate dimensions that are multiples of 8
-    height, width = original_array.shape
-    new_height = (height // 8) * 8
-    new_width = (width // 8) * 8
-
-    # Crop to multiple of 8
-    original_array = original_array[:new_height, :new_width]
-
-    print(f"Original dimensions: {height}x{width}")
-    print(f"Adjusted dimensions: {new_height}x{new_width}")
-
-    # 1. Lossy Compression
-    encoded_stream_lossy, n, m, encode_table = encode_image(
-        img=original_array, q_type="luminance", q_factor=50, encode_type="huff"
-    )
-
-    decoded_img_lossy = decode_image(
-        encoded_stream=encoded_stream_lossy,
-        n=n,
-        m=m,
-        encode_table=encode_table,
-        q_type="luminance",
-        q_factor=50,
-        encode_type="huff",
-        limited=True,
-    )
-
-    # 2. Lossless Compression
-    encoded_data = encode_image_lossless(original_array)  # Use cropped array
-    decoded_img_lossless = decode_image_lossless(encoded_data)
-
-    # Calculate compression ratios
-    original_size = original_array.nbytes
-    lossy_size = len(encoded_stream_lossy) / 8
-    lossless_size = len(encoded_data["stream"]) / 8
-
-    lossy_ratio = original_size / lossy_size
-    lossless_ratio = original_size / lossless_size
-
-    # Calculate PSNR for lossy compression
-    mse = np.mean((original_array - decoded_img_lossy) ** 2)
-    psnr = 20 * np.log10(255 / np.sqrt(mse)) if mse > 0 else float("inf")
-
-    # Verify lossless compression
-    is_lossless = np.array_equal(original_array, decoded_img_lossless)
-
-    # Plot results
-    plt.figure(figsize=(15, 5))
-
-    plt.subplot(1, 3, 1)
-    plt.title(f"Original Image\n{original_array.shape}")
-    plt.imshow(original_array, cmap="gray")
-    plt.axis("off")
-
-    plt.subplot(1, 3, 2)
-    plt.title(f"Lossy Compression\nRatio: {lossy_ratio:.2f}:1\nPSNR: {psnr:.2f}dB")
-    plt.imshow(decoded_img_lossy, cmap="gray")
-    plt.axis("off")
-
-    plt.subplot(1, 3, 3)
-    plt.title(
-        f"Lossless Compression\nRatio: {lossless_ratio:.2f}:1\nPerfect: {is_lossless}"
-    )
-    plt.imshow(decoded_img_lossless, cmap="gray")
-    plt.axis("off")
-
-    plt.tight_layout()
-    # Save the figure before showing it
-    plt.savefig("compression_comparison.png", dpi=300, bbox_inches="tight")
-    plt.show()
-
-    # Print detailed results
-    print(f"\nOriginal size: {original_size} bytes")
-    print(f"Lossy compression ratio: {lossy_ratio:.2f}:1 (PSNR: {psnr:.2f}dB)")
-    print(f"Lossless compression ratio: {lossless_ratio:.2f}:1")
-    print(f"Lossless verification: {is_lossless}")
-
-
-# compare_compression_methods("./multimediaProject/imageTest.jpg")
 from PIL import Image, ImageDraw, ImageFont
 
 
@@ -667,57 +582,61 @@ def compare_compression_methods_rgb(image_path):
             q_factor=50,
             encode_type="huff",
         )
-        encoded_lossy_data.append({
-            'stream': np.array(list(encoded_stream_lossy)),
-            'n': n,
-            'm': m,
-            'table': encode_table
-        })
+        encoded_lossy_data.append(
+            {
+                "stream": np.array(list(encoded_stream_lossy)),
+                "n": n,
+                "m": m,
+                "table": encode_table,
+            }
+        )
 
         # Lossless compression
         encoded_lossless = encode_image_lossless(original_array[:, :, channel])
         encoded_lossless_data.append(encoded_lossless)
 
     # Save encoded data
-    np.savez('encoded_lossy.npz', 
-        data=encoded_lossy_data,
-        shape=(new_height, new_width)
+    np.savez(
+        "encoded_lossy.npz", data=encoded_lossy_data, shape=(new_height, new_width)
     )
-    np.savez('encoded_lossless.npz', 
+    np.savez(
+        "encoded_lossless.npz",
         data=encoded_lossless_data,
-        shape=(new_height, new_width)
+        shape=(new_height, new_width),
     )
 
     # Load and decode data
     decoded_img_lossy = np.zeros((new_height, new_width, 3), dtype=np.uint8)
     decoded_img_lossless = np.zeros((new_height, new_width, 3), dtype=np.uint8)
 
-    with np.load('encoded_lossy.npz', allow_pickle=True) as data:
-        encoded_lossy_data = data['data']
+    with np.load("encoded_lossy.npz", allow_pickle=True) as data:
+        encoded_lossy_data = data["data"]
         for channel in range(3):
             channel_data = encoded_lossy_data[channel]
-            encoded_stream = "".join(channel_data['stream'].astype(str))
+            encoded_stream = "".join(channel_data["stream"].astype(str))
             decoded_img_lossy[:, :, channel] = decode_image(
                 encoded_stream,
-                channel_data['n'],
-                channel_data['m'],
-                channel_data['table'],
+                channel_data["n"],
+                channel_data["m"],
+                channel_data["table"],
                 q_type="luminance",
                 q_factor=50,
                 encode_type="huff",
                 limited=True,
             )
 
-    with np.load('encoded_lossless.npz', allow_pickle=True) as data:
-        encoded_lossless_data = data['data']
+    with np.load("encoded_lossless.npz", allow_pickle=True) as data:
+        encoded_lossless_data = data["data"]
         for channel in range(3):
-            decoded_img_lossless[:, :, channel] = decode_image_lossless(encoded_lossless_data[channel])
+            decoded_img_lossless[:, :, channel] = decode_image_lossless(
+                encoded_lossless_data[channel]
+            )
 
     # Calculate metrics
     original_size = original_array.nbytes
-    lossy_size = os.path.getsize('encoded_lossy.npz')
-    lossless_size = os.path.getsize('encoded_lossless.npz')
-    
+    lossy_size = os.path.getsize("encoded_lossy.npz")
+    lossless_size = os.path.getsize("encoded_lossless.npz")
+
     lossy_ratio = original_size / lossy_size
     lossless_ratio = original_size / lossless_size
 
@@ -776,7 +695,9 @@ def compare_compression_methods_rgb(image_path):
     plt.axis("off")
 
     plt.tight_layout()
-    plt.savefig(image_path+"_compression_comparison.png", dpi=1200, bbox_inches="tight")
+    plt.savefig(
+        image_path + "_compression_comparison.png", dpi=1200, bbox_inches="tight"
+    )
     plt.show()
 
     # Print detailed results
@@ -791,13 +712,15 @@ def compare_compression_methods_rgb(image_path):
     print(f"Lossless PSNR: {psnr_lossless:.2f} dB")  # Print PSNR (should be inf)
     print(f"Lossless SSIM: {ssim_lossless:.4f}")  # Print SSIM (should be 1.0)
     print(f"Lossless verification: {is_lossless}")
-  
 
-### image test  
+
+### image test
 compare_compression_methods_rgb("./imageResults/imageTest.jpg")
 compare_compression_methods_rgb("./imageResults/image6.jpeg")
 
 # """# video test"""
-# encode_vid_lossless("./vidTest.mp4", "./losslessVid.avi", runtime_secs=5, display_frames=False)
-# video_path = "./vidTest.mp4"
-# encode_vid(video_path, "lossyVid.avi", 5, encode_type="huff")
+video_path = "./vidTest.mp4"
+encode_vid_lossless(
+    video_path, "./losslessVid.avi", runtime_secs=5, display_frames=False
+)
+encode_vid(video_path, "lossyVid.avi", 5, encode_type="huff")
